@@ -2,10 +2,7 @@
 
 export class Token<T = any> {
   private declare __shape?: T;
-  symbol: Symbol;
-  constructor(tag?: string, public defaultValue?: T) {
-    this.symbol = Symbol(tag);
-  }
+  constructor(public name: string, public defaultValue?: T) {}
 }
 
 export const AsyncInitializer = Symbol("AsyncInitializer");
@@ -102,7 +99,7 @@ export class Container {
         this.values.set(target, target.defaultValue);
         return target.defaultValue;
       }
-      throw new Error(`Could not resolve TOKEN "${target.symbol.description}"`);
+      throw new Error(`Could not resolve TOKEN "${target.name}"`);
     }
     throw new Error(`Could not resolve ${target}`);
   }
@@ -114,6 +111,27 @@ export class Container {
       }
     }
     this.values.clear();
+  }
+
+  generateGraph(
+    target: Class,
+    result = new Set<string>(),
+    visited = new Set<Class>()
+  ): string[] {
+    if (visited.has(target)) return [];
+    visited.add(target);
+    try {
+      const params = this.#getParams(target);
+      for (const param of params) {
+        result.add(
+          `${JSON.stringify(target.name)} -> ${JSON.stringify(param.name)}`
+        );
+        if (typeof param === "function") {
+          this.generateGraph(param, result, visited);
+        }
+      }
+    } catch {}
+    return [...result];
   }
 }
 
