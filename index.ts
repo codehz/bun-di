@@ -3,7 +3,7 @@
 export class Token<T = any> {
   private declare __shape?: T;
   symbol: Symbol;
-  constructor(tag?: string) {
+  constructor(tag?: string, public defaultValue?: T) {
     this.symbol = Symbol(tag);
   }
 }
@@ -98,6 +98,10 @@ export class Container {
     }
     if (this.parent) return this.parent.resolve(target);
     if (target instanceof Token) {
+      if (target.defaultValue != null) {
+        this.values.set(target, target.defaultValue);
+        return target.defaultValue;
+      }
       throw new Error(`Could not resolve TOKEN "${target.symbol.description}"`);
     }
     throw new Error(`Could not resolve ${target}`);
