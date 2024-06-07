@@ -35,10 +35,4 @@ const contents = JSON.parse(await readFile("package.json", "utf-8"));
 contents.module = "index.js";
 contents.devDependencies = {};
 delete contents["private"];
-contents.version = spawnSync("git", ["describe", "--tags"], {
-  encoding: "utf-8",
-})
-  .stdout.trim()
-  .replace(/-[[:digit:]]\+-g/, "+")
-  .replace(/^v/, "");
 await Bun.write("dist/package.json", JSON.stringify(contents, null, 2));
