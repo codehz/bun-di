@@ -8,6 +8,8 @@ export class Token<T = any> {
   }
 }
 
+export const AsyncInitializer = Symbol("AsyncInitializer");
+
 export type Class<T = any> = new (...args: any[]) => T;
 export type ClassOrToken<T = any> = Class<T> | Token<T>;
 
@@ -63,7 +65,7 @@ export class Container {
     return params;
   }
 
-  resolve<T>(target: ClassOrToken<T>): T {
+  async resolve<T>(target: ClassOrToken<T>): Promise<T> {
     if (this.values.has(target)) {
       return this.values.get(target);
     }
@@ -71,16 +73,27 @@ export class Container {
       if (this.singletons.has(target)) {
         const params = this.#getParams(target);
         const result = new (target as any)(
-          ...params.map((param) => this.resolve<any>(param as any))
+          ...(await Array.fromAsync(
+            params.map((param) => this.resolve<any>(param as any))
+          ))
         );
+        if (AsyncInitializer in result) {
+          await result[AsyncInitializer]();
+        }
         this.values.set(target, result);
         return result;
       }
       if (this.injectables.has(target)) {
         const params = this.#getParams(target);
-        return new (target as any)(
-          ...params.map((param) => this.resolve<any>(param as any))
+        const result = new (target as any)(
+          ...(await Array.fromAsync(
+            params.map((param) => this.resolve<any>(param as any))
+          ))
         );
+        if (AsyncInitializer in result) {
+          await result[AsyncInitializer]();
+        }
+        return result;
       }
     }
     if (this.parent) return this.parent.resolve(target);
@@ -88,6 +101,15 @@ export class Container {
       throw new Error(`Could not resolve TOKEN "${target.symbol.description}"`);
     }
     throw new Error(`Could not resolve ${target}`);
+  }
+
+  async [Symbol.asyncDispose]() {
+    for (const value of this.values.values()) {
+      if (Symbol.asyncDispose in value) {
+        await value[Symbol.asyncDispose]();
+      }
+    }
+    this.values.clear();
   }
 }
 
