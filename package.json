@@ -11,7 +11,10 @@
     "email": "git@hertz.moe"
   },
   "license": "MIT",
-  "keywords": ["bun", "dependency injection"],
+  "keywords": [
+    "bun",
+    "dependency injection"
+  ],
   "devDependencies": {
     "@types/bun": "latest",
     "@abraham/reflection": "^0.12.0",
@@ -20,5 +23,6 @@
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "dependencies": {}
+  "dependencies": {},
+  "version": "0.0.1"
 }
