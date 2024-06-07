@@ -92,9 +92,9 @@ export class Container {
 
   async resolve<T>(target: ClassOrToken<T>, scope: Scope): Promise<T> {
     switch (target) {
-      case Scope:
+      case scope.constructor:
         return scope as any;
-      case Container:
+      case this.constructor:
         return this as any;
     }
     if (scope.values.has(target)) {

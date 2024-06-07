@@ -13,8 +13,15 @@ const INPUT = new Token<string>("input");
 const TEST = new Token<string>("test", "default");
 
 const SubContainer = new Container("sub");
-const SubScope1 = new Scope(SubContainer, RootScope);
-const SubScope2 = new Scope(SubContainer, RootScope);
+
+class MyScope extends Scope {
+  constructor() {
+    super(SubContainer, RootScope);
+  }
+}
+
+const SubScope1 = new MyScope();
+const SubScope2 = new MyScope();
 
 @singleton()
 class Input {
@@ -26,7 +33,11 @@ class Input {
 
 @singleton(SubContainer)
 class Test {
-  constructor(public input: Input, @inject(TEST) public value: string) {}
+  constructor(
+    public input: Input,
+    @inject(TEST) public value: string,
+    public scope: MyScope
+  ) {}
 }
 
 RootScope.set(INPUT, "test");
