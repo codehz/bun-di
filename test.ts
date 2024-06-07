@@ -1,22 +1,38 @@
 import "@abraham/reflection";
-import { AsyncInitializer, DefaultContainer, Token, inject, singleton } from ".";
+import {
+  AsyncInitializer,
+  Container,
+  RootScope,
+  Scope,
+  Token,
+  inject,
+  singleton,
+} from ".";
 
-const TEST = new Token<string>("test");
+const INPUT = new Token<string>("input");
+const TEST = new Token<string>("test", "default");
+
+const SubContainer = new Container("sub");
+const SubScope1 = new Scope(SubContainer, RootScope);
+const SubScope2 = new Scope(SubContainer, RootScope);
 
 @singleton()
 class Input {
-  constructor(@inject(TEST) public value: string) {}
+  constructor(@inject(INPUT) public value: string) {}
   async [AsyncInitializer]() {
     await Bun.sleep(100);
   }
 }
 
-@singleton()
+@singleton(SubContainer)
 class Test {
-  constructor(public input: Input) {
-  }
+  constructor(public input: Input, @inject(TEST) public value: string) {}
 }
 
-DefaultContainer.set(TEST, "test");
-const test = await DefaultContainer.resolve(Test);
-console.log(test);
+RootScope.set(INPUT, "test");
+SubScope1.set(TEST, "sub1");
+const test1 = await SubScope1.resolve(Test);
+console.log(test1);
+SubScope2.set(TEST, "sub2");
+const test2 = await SubScope2.resolve(Test);
+console.log(test2);

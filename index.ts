@@ -10,13 +10,30 @@ export const AsyncInitializer = Symbol("AsyncInitializer");
 export type Class<T = any> = new (...args: any[]) => T;
 export type ClassOrToken<T = any> = Class<T> | Token<T>;
 
+export class ResolveError extends Error {
+  constructor(public target: ClassOrToken) {
+    super(
+      typeof target === "function"
+        ? `Could not resolve ${target.name}`
+        : `Could not resolve TOKEN ${target.name}!`
+    );
+  }
+}
+
+const overrides: WeakMap<Class, [index: number, value: ClassOrToken][]> =
+  new WeakMap();
+function addOverride(target: Class, index: number, value: ClassOrToken) {
+  if (!overrides.has(target)) {
+    overrides.set(target, []);
+  }
+  overrides.get(target)!.push([index, value]);
+}
+
 export class Container {
-  constructor(public parent?: Container) {}
+  constructor(public name: string) {}
   cache: WeakMap<Class, ClassOrToken[]> = new WeakMap();
-  overrides: Map<Class, [index: number, value: ClassOrToken][]> = new Map();
   singletons: Set<ClassOrToken> = new Set();
   injectables: Set<ClassOrToken> = new Set();
-  values: Map<ClassOrToken, any> = new Map();
 
   registerSingleton(target: Class, params?: ClassOrToken[]): void;
   registerSingleton(target: Token, params: ClassOrToken[]): void;
@@ -34,83 +51,22 @@ export class Container {
     }
     this.injectables.add(target);
   }
-  addOverride(target: Class, index: number, value: ClassOrToken) {
-    if (!this.overrides.has(target)) {
-      this.overrides.set(target, []);
-    }
-    this.overrides.get(target)!.push([index, value]);
-  }
 
-  set(key: ClassOrToken, value: any) {
-    this.values.set(key, value);
-  }
-
-  #getParams(input: Class): ClassOrToken[] {
+  getDependencies(input: Class): ClassOrToken[] {
     if (this.cache.has(input)) {
       return this.cache.get(input)!;
     }
-    const params =
+    const dependencies =
       (Reflect.getMetadata("design:paramtypes", input) as any) ?? [];
-    const overrides = this.overrides.get(input);
-    if (overrides) {
-      for (const [index, override] of overrides) {
-        params[index] = override;
+    const override = overrides.get(input);
+    if (override) {
+      for (const [index, value] of override) {
+        dependencies[index] = value;
       }
-      this.overrides.delete(input);
+      overrides.delete(input);
     }
-    this.cache.set(input, params);
-    return params;
-  }
-
-  async resolve<T>(target: ClassOrToken<T>): Promise<T> {
-    if (this.values.has(target)) {
-      return this.values.get(target);
-    }
-    if (typeof target === "function") {
-      if (this.singletons.has(target)) {
-        const params = this.#getParams(target);
-        const result = new (target as any)(
-          ...(await Array.fromAsync(
-            params.map((param) => this.resolve<any>(param as any))
-          ))
-        );
-        if (AsyncInitializer in result) {
-          await result[AsyncInitializer]();
-        }
-        this.values.set(target, result);
-        return result;
-      }
-      if (this.injectables.has(target)) {
-        const params = this.#getParams(target);
-        const result = new (target as any)(
-          ...(await Array.fromAsync(
-            params.map((param) => this.resolve<any>(param as any))
-          ))
-        );
-        if (AsyncInitializer in result) {
-          await result[AsyncInitializer]();
-        }
-        return result;
-      }
-    }
-    if (this.parent) return this.parent.resolve(target);
-    if (target instanceof Token) {
-      if (target.defaultValue != null) {
-        this.values.set(target, target.defaultValue);
-        return target.defaultValue;
-      }
-      throw new Error(`Could not resolve TOKEN "${target.name}"`);
-    }
-    throw new Error(`Could not resolve ${target}`);
-  }
-
-  async [Symbol.asyncDispose]() {
-    for (const value of this.values.values()) {
-      if (Symbol.asyncDispose in value) {
-        await value[Symbol.asyncDispose]();
-      }
-    }
-    this.values.clear();
+    this.cache.set(input, dependencies);
+    return dependencies;
   }
 
   generateGraph(
@@ -121,7 +77,7 @@ export class Container {
     if (visited.has(target)) return [];
     visited.add(target);
     try {
-      const params = this.#getParams(target);
+      const params = this.getDependencies(target);
       for (const param of params) {
         result.add(
           `${JSON.stringify(target.name)} -> ${JSON.stringify(param.name)}`
@@ -133,26 +89,93 @@ export class Container {
     } catch {}
     return [...result];
   }
+
+  async resolve<T>(target: ClassOrToken<T>, scope: Scope): Promise<T> {
+    switch (target) {
+      case Scope:
+        return scope as any;
+      case Container:
+        return this as any;
+    }
+    if (scope.values.has(target)) {
+      return scope.values.get(target);
+    }
+    if (typeof target === "function") {
+      if (this.singletons.has(target)) {
+        const params = this.getDependencies(target);
+        const result = new (target as any)(
+          ...(await Array.fromAsync(
+            params.map((param) => this.resolve<any>(param as any, scope))
+          ))
+        );
+        if (AsyncInitializer in result) {
+          await result[AsyncInitializer]();
+        }
+        scope.values.set(target, result);
+        return result;
+      }
+      if (this.injectables.has(target)) {
+        const params = this.getDependencies(target);
+        const result = new (target as any)(
+          ...(await Array.fromAsync(
+            params.map((param) => this.resolve<any>(param as any, scope))
+          ))
+        );
+        if (AsyncInitializer in result) {
+          await result[AsyncInitializer]();
+        }
+        return result;
+      }
+    }
+    if (target instanceof Token && target.defaultValue != null) {
+      scope.values.set(target, target.defaultValue);
+      return target.defaultValue;
+    }
+    if (scope.parent) {
+      return await scope.parent.container.resolve(target, scope.parent);
+    }
+    throw new ResolveError(target);
+  }
 }
 
-export const DefaultContainer = new Container();
+export class Scope {
+  constructor(public container: Container, public parent?: Scope) {}
+  values: Map<ClassOrToken, any> = new Map();
 
-export function singleton(container = DefaultContainer): ClassDecorator {
+  set(key: ClassOrToken, value: any) {
+    this.values.set(key, value);
+  }
+
+  async resolve<T>(target: ClassOrToken<T>): Promise<T> {
+    return await this.container.resolve(target, this);
+  }
+
+  async [Symbol.asyncDispose]() {
+    for (const value of this.values.values()) {
+      if (Symbol.asyncDispose in value) {
+        await value[Symbol.asyncDispose]();
+      }
+    }
+    this.values.clear();
+  }
+}
+
+export const RootContainer = new Container("root");
+export const RootScope = new Scope(RootContainer);
+
+export function singleton(container = RootContainer): ClassDecorator {
   return (target: any) => {
     container.registerSingleton(target);
     return target;
   };
 }
 
-export function inject(
-  value: ClassOrToken,
-  container = DefaultContainer
-): ParameterDecorator {
+export function inject<T>(value: Token<T>): ParameterDecorator {
   return (
     target: Object,
-    propertyKey: string | symbol | undefined,
+    _key: string | symbol | undefined,
     parameterIndex: number
   ) => {
-    container.addOverride(target as Class, parameterIndex, value);
+    addOverride(target as Class, parameterIndex, value);
   };
 }
