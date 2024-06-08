@@ -33,6 +33,7 @@ export class Container {
   constructor(public name: string) {}
   cache: WeakMap<Class, ClassOrToken[]> = new WeakMap();
   singletons: Set<ClassOrToken> = new Set();
+  refcounteds: Set<ClassOrToken> = new Set();
   injectables: Set<ClassOrToken> = new Set();
 
   registerSingleton(target: Class, params?: ClassOrToken[]): void;
@@ -42,6 +43,14 @@ export class Container {
       this.cache.set(target as Class, params);
     }
     this.singletons.add(target);
+  }
+  registerRefcounted(target: Class, params?: ClassOrToken[]): void;
+  registerRefcounted(target: Token, params: ClassOrToken[]): void;
+  registerRefcounted(target: ClassOrToken, params?: ClassOrToken[]) {
+    if (params) {
+      this.cache.set(target as Class, params);
+    }
+    this.refcounteds.add(target);
   }
   registerInjectable(target: Class, params?: ClassOrToken[]): void;
   registerInjectable(target: Token, params: ClassOrToken[]): void;
@@ -90,6 +99,19 @@ export class Container {
     return [...result];
   }
 
+  async #createInstance(target: Class, scope: Scope) {
+    const params = this.getDependencies(target);
+    const instance = new (target as any)(
+      ...(await Array.fromAsync(
+        params.map((param) => this.resolve<any>(param as any, scope))
+      ))
+    );
+    if (AsyncInitializer in instance) {
+      await instance[AsyncInitializer]();
+    }
+    return instance;
+  }
+
   async resolve<T>(target: ClassOrToken<T>, scope: Scope): Promise<T> {
     switch (target) {
       case scope.constructor:
@@ -99,43 +121,29 @@ export class Container {
     }
     if (scope.singletons.has(target)) {
       return await scope.singletons.get(target);
+    } else if (scope.refcounteds.has(target)) {
+      const result = scope.refcounteds.get(target)!;
+      result[1]++;
+      return result[0];
     }
     if (typeof target === "function") {
       if (this.singletons.has(target)) {
-        const params = this.getDependencies(target);
         let result;
         scope.singletons.set(
           target,
-          (result = (async () => {
-            const instance = new (target as any)(
-              ...(await Array.fromAsync(
-                params.map((param) => this.resolve<any>(param as any, scope))
-              ))
-            );
-            if (AsyncInitializer in instance) {
-              await instance[AsyncInitializer]();
-            }
-            return instance;
-          })())
+          (result = this.#createInstance(target, scope))
         );
         return await result;
-      }
-      if (this.injectables.has(target)) {
-        const params = this.getDependencies(target);
+      } else if (this.refcounteds.has(target)) {
         let result;
-        scope.injectables.add(
-          (result = (async () => {
-            const instance = new (target as any)(
-              ...(await Array.fromAsync(
-                params.map((param) => this.resolve<any>(param as any, scope))
-              ))
-            );
-            if (AsyncInitializer in instance) {
-              await instance[AsyncInitializer]();
-            }
-            return instance;
-          })())
-        );
+        scope.refcounteds.set(target, [
+          (result = this.#createInstance(target, scope)),
+          1,
+        ]);
+        return await result;
+      } else if (this.injectables.has(target)) {
+        let result;
+        scope.injectables.add((result = this.#createInstance(target, scope)));
         return await result;
       }
     }
@@ -161,6 +169,7 @@ async function dispose(obj: any) {
 export class Scope {
   constructor(public container: Container, public parent?: Scope) {}
   singletons: Map<ClassOrToken, Promise<any>> = new Map();
+  refcounteds: Map<ClassOrToken, [value: Promise<any>, rc: number]> = new Map();
   injectables: Set<Promise<any>> = new Set();
 
   set<T>(key: ClassOrToken<T>, value: T) {
@@ -170,22 +179,38 @@ export class Scope {
   async unregister(target: any) {
     if (this.injectables.delete(target)) {
       await dispose(target);
+    } else if (this.refcounteds.has(target)) {
+      const result = this.refcounteds.get(target);
+      if (--result![1] === 0) {
+        this.refcounteds.delete(target);
+        await dispose(await result![0]);
+      }
     } else {
-      const value = this.singletons.get(target);
+      const value = await this.singletons.get(target);
       if (value) await dispose(value);
       this.singletons.delete(target);
     }
   }
 
-  async resolve<T>(target: ClassOrToken<T>): Promise<T> {
-    return await this.container.resolve(target, this);
+  async resolve<T>(target: ClassOrToken<T>, signal?: AbortSignal): Promise<T> {
+    const value = await this.container.resolve(target, this);
+    signal?.addEventListener("abort", () => this.unregister(value));
+    return value;
   }
 
   async [Symbol.asyncDispose]() {
     for (const value of this.singletons.values()) {
-      await dispose(value);
+      await dispose(await value);
     }
     this.singletons.clear();
+    for (const [value] of this.refcounteds.values()) {
+      await dispose(await value);
+    }
+    this.refcounteds.clear();
+    for (const value of this.injectables.values()) {
+      await dispose(await value);
+    }
+    this.injectables.clear();
   }
 }
 
@@ -195,6 +220,13 @@ export const RootScope = new Scope(RootContainer);
 export function singleton(container = RootContainer): ClassDecorator {
   return (target: any) => {
     container.registerSingleton(target);
+    return target;
+  };
+}
+
+export function refcounted(container = RootContainer): ClassDecorator {
+  return (target: any) => {
+    container.registerRefcounted(target);
     return target;
   };
 }
