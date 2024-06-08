@@ -15,9 +15,8 @@ await rm("dist", { recursive: true });
 await Bun.build({
   target: "bun",
   outdir: "dist",
-  minify: true,
-  splitting: true,
-  sourcemap: "inline",
+  minify: false,
+  sourcemap: "external",
   entrypoints: ["index.ts"],
   plugins: [dts()],
 });
