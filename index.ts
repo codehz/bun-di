@@ -152,7 +152,7 @@ export class Scope {
   singletons: Map<ClassOrToken, any> = new Map();
   injectables: Set<any> = new Set();
 
-  set(key: ClassOrToken, value: any) {
+  set<T>(key: ClassOrToken<T>, value: T) {
     this.singletons.set(key, value);
   }
 
