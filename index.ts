@@ -97,8 +97,8 @@ export class Container {
       case this.constructor:
         return this as any;
     }
-    if (scope.values.has(target)) {
-      return scope.values.get(target);
+    if (scope.singletons.has(target)) {
+      return scope.singletons.get(target);
     }
     if (typeof target === "function") {
       if (this.singletons.has(target)) {
@@ -111,7 +111,7 @@ export class Container {
         if (AsyncInitializer in result) {
           await result[AsyncInitializer]();
         }
-        scope.values.set(target, result);
+        scope.singletons.set(target, result);
         return result;
       }
       if (this.injectables.has(target)) {
@@ -124,11 +124,12 @@ export class Container {
         if (AsyncInitializer in result) {
           await result[AsyncInitializer]();
         }
+        scope.injectables.add(result);
         return result;
       }
     }
     if (target instanceof Token && target.defaultValue != null) {
-      scope.values.set(target, target.defaultValue);
+      scope.singletons.set(target, target.defaultValue);
       return target.defaultValue;
     }
     if (scope.parent) {
@@ -138,12 +139,31 @@ export class Container {
   }
 }
 
+async function dispose(obj: any) {
+  if (Symbol.asyncDispose in obj) {
+    await obj[Symbol.asyncDispose]();
+  } else if (Symbol.dispose in obj) {
+    obj[Symbol.dispose]();
+  }
+}
+
 export class Scope {
   constructor(public container: Container, public parent?: Scope) {}
-  values: Map<ClassOrToken, any> = new Map();
+  singletons: Map<ClassOrToken, any> = new Map();
+  injectables: Set<any> = new Set();
 
   set(key: ClassOrToken, value: any) {
-    this.values.set(key, value);
+    this.singletons.set(key, value);
+  }
+
+  async unregister(target: any) {
+    if (this.injectables.delete(target)) {
+      await dispose(target);
+    } else {
+      const value = this.singletons.get(target);
+      if (value) await dispose(value);
+      this.singletons.delete(target);
+    }
   }
 
   async resolve<T>(target: ClassOrToken<T>): Promise<T> {
@@ -151,12 +171,10 @@ export class Scope {
   }
 
   async [Symbol.asyncDispose]() {
-    for (const value of this.values.values()) {
-      if (Symbol.asyncDispose in value) {
-        await value[Symbol.asyncDispose]();
-      }
+    for (const value of this.singletons.values()) {
+      await dispose(value);
     }
-    this.values.clear();
+    this.singletons.clear();
   }
 }
 
@@ -166,6 +184,13 @@ export const RootScope = new Scope(RootContainer);
 export function singleton(container = RootContainer): ClassDecorator {
   return (target: any) => {
     container.registerSingleton(target);
+    return target;
+  };
+}
+
+export function injectable(container = RootContainer): ClassDecorator {
+  return (target: any) => {
+    container.registerInjectable(target);
     return target;
   };
 }
