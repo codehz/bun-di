@@ -108,10 +108,10 @@ export class Container {
             params.map((param) => this.resolve<any>(param as any, scope))
           ))
         );
+        scope.singletons.set(target, result);
         if (AsyncInitializer in result) {
           await result[AsyncInitializer]();
         }
-        scope.singletons.set(target, result);
         return result;
       }
       if (this.injectables.has(target)) {
@@ -121,10 +121,10 @@ export class Container {
             params.map((param) => this.resolve<any>(param as any, scope))
           ))
         );
+        scope.injectables.add(result);
         if (AsyncInitializer in result) {
           await result[AsyncInitializer]();
         }
-        scope.injectables.add(result);
         return result;
       }
     }
