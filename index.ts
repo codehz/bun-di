@@ -98,38 +98,49 @@ export class Container {
         return this as any;
     }
     if (scope.singletons.has(target)) {
-      return scope.singletons.get(target);
+      return await scope.singletons.get(target);
     }
     if (typeof target === "function") {
       if (this.singletons.has(target)) {
         const params = this.getDependencies(target);
-        const result = new (target as any)(
-          ...(await Array.fromAsync(
-            params.map((param) => this.resolve<any>(param as any, scope))
-          ))
+        let result;
+        scope.singletons.set(
+          target,
+          (result = (async () => {
+            const instance = new (target as any)(
+              ...(await Array.fromAsync(
+                params.map((param) => this.resolve<any>(param as any, scope))
+              ))
+            );
+            if (AsyncInitializer in instance) {
+              await instance[AsyncInitializer]();
+            }
+            return instance;
+          })())
         );
-        scope.singletons.set(target, result);
-        if (AsyncInitializer in result) {
-          await result[AsyncInitializer]();
-        }
-        return result;
+        return await result;
       }
       if (this.injectables.has(target)) {
         const params = this.getDependencies(target);
-        const result = new (target as any)(
-          ...(await Array.fromAsync(
-            params.map((param) => this.resolve<any>(param as any, scope))
-          ))
+        let result;
+        scope.injectables.add(
+          (result = (async () => {
+            const instance = new (target as any)(
+              ...(await Array.fromAsync(
+                params.map((param) => this.resolve<any>(param as any, scope))
+              ))
+            );
+            if (AsyncInitializer in instance) {
+              await instance[AsyncInitializer]();
+            }
+            return instance;
+          })())
         );
-        scope.injectables.add(result);
-        if (AsyncInitializer in result) {
-          await result[AsyncInitializer]();
-        }
-        return result;
+        return await result;
       }
     }
     if (target instanceof Token && target.defaultValue != null) {
-      scope.singletons.set(target, target.defaultValue);
+      scope.singletons.set(target, Promise.resolve(target.defaultValue));
       return target.defaultValue;
     }
     if (scope.parent) {
@@ -149,11 +160,11 @@ async function dispose(obj: any) {
 
 export class Scope {
   constructor(public container: Container, public parent?: Scope) {}
-  singletons: Map<ClassOrToken, any> = new Map();
-  injectables: Set<any> = new Set();
+  singletons: Map<ClassOrToken, Promise<any>> = new Map();
+  injectables: Set<Promise<any>> = new Set();
 
   set<T>(key: ClassOrToken<T>, value: T) {
-    this.singletons.set(key, value);
+    this.singletons.set(key, Promise.resolve(value));
   }
 
   async unregister(target: any) {
