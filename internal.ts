@@ -5,7 +5,7 @@ export class LinkTag {
 type Destructor = () => Promise<void> | void;
 
 const links = new WeakMap<LinkTag, Destructor[]>();
-const destructors = new Map<WeakKey, Destructor>();
+const destructors = new WeakMap<WeakKey, Destructor>();
 
 export function registerDestructor(key: WeakKey, destructor: Destructor) {
   destructors.set(key, destructor);
