@@ -1,5 +1,5 @@
 {
-  "name": "@codehz/bun-di",
+  "name": "@codehz/di",
   "module": "index.ts",
   "type": "module",
   "repository": {
