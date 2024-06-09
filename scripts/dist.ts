@@ -34,5 +34,6 @@ const contents = JSON.parse(await readFile("package.json", "utf-8"));
 contents.module = "index.js";
 contents.devDependencies = {};
 contents.overrides = {};
+contents.scripts = {};
 delete contents["private"];
 await Bun.write("dist/package.json", JSON.stringify(contents, null, 2));
