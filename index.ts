@@ -9,3 +9,4 @@ export * from "./scope";
 export { AsyncInitializer } from "./symbols";
 export * from "./types";
 export { generateGraph } from "./utils";
+export * from "./error";

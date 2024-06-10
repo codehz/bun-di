@@ -1,5 +1,5 @@
 import type { Container } from "./container";
-import { ResolveError } from "./error";
+import { DependencyError } from "./error";
 import {
   addLink,
   addLinkByKey,
@@ -165,7 +165,7 @@ export class Scope {
           }
         } catch (e) {
           controller.abort(e);
-          throw new ResolveError(target, e);
+          throw new DependencyError(target, parent?.class, e);
         }
       }
     }
@@ -173,9 +173,9 @@ export class Scope {
       try {
         return await this.parent.resolve(target, options);
       } catch (e) {
-        throw new ResolveError(target, e);
+        throw new DependencyError(target, parent?.class, e);
       }
-    throw new ResolveError(target);
+    throw new DependencyError(target, parent?.class);
   }
 
   async [Symbol.asyncDispose]() {
