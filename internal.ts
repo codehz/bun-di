@@ -18,6 +18,11 @@ export function addLink(key: LinkTag, value: Destructor) {
   links.get(key)!.push(value);
 }
 
+export function bindAbortSignal(token: WeakKey, signal: AbortSignal) {
+  const destructor = destructors.get(token);
+  if (destructor) signal.addEventListener("abort", destructor);
+}
+
 export function addLinkByKey(key: LinkTag, token: WeakKey) {
   const destructor = destructors.get(token);
   if (destructor) addLink(key, destructor);

@@ -3,17 +3,18 @@ import { ResolveError } from "./error";
 import {
   addLink,
   addLinkByKey,
+  bindAbortSignal,
   destroyLinks,
   LinkTag,
   registerDestructor,
 } from "./internal";
+import { AsyncInitializer, LinkSource } from "./symbols";
 import {
   Token,
   type Class,
   type ClassOrToken,
   type ScopeResolveOptions,
 } from "./types";
-import { AsyncInitializer, LinkSource } from "./symbols";
 import { getDependencies } from "./utils";
 
 async function disposePromise(obj: Promise<any>) {
@@ -81,8 +82,10 @@ export class Scope {
       return this.#singletons.get(target)!;
     } else if (this.#refcounteds.has(target)) {
       const result = this.#refcounteds.get(target)!;
-      result[1]++;
       if (parent) addLinkByKey(parent, result[0]);
+      else if (signal) bindAbortSignal(target, signal);
+      else throw new Error("No signal provided for refcounted instance");
+      result[1]++;
       return result[0];
     }
     if (target instanceof Token) {
