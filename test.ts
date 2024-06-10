@@ -2,9 +2,11 @@ import "@abraham/reflection";
 import {
   AsyncInitializer,
   Container,
+  ResolveMetadata,
   RootScope,
   Scope,
   Token,
+  hint,
   inject,
   injectable,
   refcounted,
@@ -22,31 +24,49 @@ class MyScope extends Scope {
   }
 }
 
+@injectable()
+class Logger {
+  name: string;
+  constructor({ parent = Object, hint }: ResolveMetadata) {
+    this.name = hint ?? parent.name;
+  }
+
+  log(tmp: string, ...params: any[]) {
+    console.log(`[${this.name}] ${tmp}`, ...params);
+  }
+}
+
 @refcounted()
 class Refcounted {
-  constructor(@inject(INPUT) public value: string) {}
+  constructor(
+    @inject(INPUT) public value: string,
+    private logger: Logger
+  ) {}
   id = crypto.randomUUID();
   async [AsyncInitializer]() {
     await Bun.sleep(100);
-    console.log("created refcounted", this.value, this.id);
+    this.logger.log("created refcounted", this.value, this.id);
   }
   async [Symbol.asyncDispose]() {
     await Bun.sleep(100);
-    console.log("dispose refcounted", this.value, this.id);
+    this.logger.log("dispose refcounted", this.value, this.id);
   }
 }
 
 @injectable()
 class Injectable {
-  constructor(@inject(INPUT) public value: string) {}
+  constructor(
+    @inject(INPUT) public value: string,
+    private logger: Logger
+  ) {}
   id = crypto.randomUUID();
   async [AsyncInitializer]() {
     await Bun.sleep(100);
-    console.log("created injectable", this.value, this.id);
+    this.logger.log("created injectable", this.value, this.id);
   }
   async [Symbol.asyncDispose]() {
     await Bun.sleep(100);
-    console.log("dispose injectable", this.value, this.id);
+    this.logger.log("dispose injectable", this.value, this.id);
   }
 }
 
@@ -56,15 +76,16 @@ class Test {
     public refcounted: Refcounted,
     public injectable: Injectable,
     @inject(TEST) public value: string,
-    public scope: MyScope
+    public scope: MyScope,
+    @hint("root") private logger: Logger
   ) {}
   async [AsyncInitializer]() {
     await Bun.sleep(100);
-    console.log("created test", this.value);
+    this.logger.log("created test", this.value);
   }
   async [Symbol.asyncDispose]() {
     await Bun.sleep(100);
-    console.log("dispose test", this.value);
+    this.logger.log("dispose test", this.value);
   }
 }
 

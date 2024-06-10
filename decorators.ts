@@ -1,7 +1,7 @@
 import { RootContainer } from "./root";
-import type { Class } from "./types";
 import type { Token } from "./token";
-import { addOverride } from "./utils";
+import type { Class } from "./types";
+import { addHint, addOverride } from "./utils";
 
 export function singleton(container = RootContainer): ClassDecorator {
   return (target: any) => {
@@ -24,12 +24,23 @@ export function injectable(container = RootContainer): ClassDecorator {
   };
 }
 
-export function inject<T>(value: Token<T>): ParameterDecorator {
+export function inject<T>(value: Token<T>, hint?: any): ParameterDecorator {
   return (
     target: Object,
     _key: string | symbol | undefined,
     parameterIndex: number
   ) => {
     addOverride(target as Class, parameterIndex, value);
+    if (hint) addHint(target as Class, parameterIndex, hint);
+  };
+}
+
+export function hint(hint?: any): ParameterDecorator {
+  return (
+    target: Object,
+    _key: string | symbol | undefined,
+    parameterIndex: number
+  ) => {
+    addHint(target as Class, parameterIndex, hint);
   };
 }

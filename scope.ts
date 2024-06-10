@@ -11,21 +11,23 @@ import {
   registerLifetime,
 } from "./internal";
 import { Lifetime, RefcountedLifetime } from "./lifetime";
-import { AsyncInitializer, LinkSource } from "./symbols";
+import { AsyncInitializer, ParentInfo } from "./symbols";
+import { Token } from "./token";
 import {
+  ResolveMetadata,
   type Class,
   type ClassOrToken,
+  type ParentMetadata,
   type ScopeResolveOptions,
 } from "./types";
-import { Token } from "./token";
-import { getDependencies } from "./utils";
+import { getDependencies, getHint } from "./utils";
 
 async function disposePromise(obj: Promise<any>) {
   if (Bun.peek.status(obj) === "fulfilled") {
     const instance = Bun.peek(obj);
     await dispose(instance);
   } else {
-    console.warn("Skiped disposing promise", obj);
+    console.warn("Skiped disposing", obj);
   }
 }
 
@@ -38,7 +40,10 @@ async function dispose(obj: any) {
 }
 
 export class Scope {
-  constructor(public container: Container, public parent?: Scope) {}
+  constructor(
+    public container: Container,
+    public parent?: Scope
+  ) {}
   #singletons = new Map<ClassOrToken, Promise<any>>();
   #refcounteds = new Map<ClassOrToken, Promise<any>>();
   #injectables = new Set<Promise<any>>();
@@ -50,12 +55,13 @@ export class Scope {
   async #createInstance<T = any>(
     target: Class<T>,
     lifetime: Lifetime,
-    tag: LinkTag
+    tag: LinkTag,
+    parent: ParentMetadata | undefined
   ): Promise<T> {
     const params = getDependencies(target);
     const instance = new (target as any)(
       ...(await Promise.all(
-        params.map((param) => {
+        params.map((param, idx) => {
           switch (param) {
             case this.constructor:
               return this as any;
@@ -63,8 +69,20 @@ export class Scope {
               return this.container as any;
             case Lifetime:
               return lifetime;
+            case ResolveMetadata: {
+              const metadata = new ResolveMetadata();
+              metadata.parent = parent?.class;
+              metadata.hint = parent?.hint;
+              return metadata;
+            }
             default:
-              return this.resolve<any>(param as any, { [LinkSource]: tag });
+              return this.resolve<any>(param as any, {
+                [ParentInfo]: {
+                  tag,
+                  class: target,
+                  hint: getHint(target, idx),
+                },
+              });
           }
         })
       ))
@@ -79,13 +97,13 @@ export class Scope {
     target: ClassOrToken<T>,
     options: ScopeResolveOptions = {}
   ): Promise<T> {
-    let { signal, [LinkSource]: parent } = options;
+    let { signal, [ParentInfo]: parent } = options;
     signal?.throwIfAborted();
     if (this.#singletons.has(target)) {
       return this.#singletons.get(target)!;
     } else if (this.#refcounteds.has(target)) {
       const result = this.#refcounteds.get(target)!;
-      if (parent) addLinkByKey(parent, result);
+      if (parent) addLinkByKey(parent.tag, result);
       else if (signal) bindAbortSignal(result, signal);
       else throw new Error("No signal provided for refcounted instance");
       addRefcountedCount(result);
@@ -114,7 +132,7 @@ export class Scope {
                 await destroyLinks(tag);
               }
             });
-            const result = this.#createInstance(target, lifetime, tag);
+            const result = this.#createInstance(target, lifetime, tag, parent);
             registerLifetime(result, lifetime);
             lifetime.registerAbortSignal(signal);
             this.#singletons.set(target, result);
@@ -126,8 +144,8 @@ export class Scope {
                 await destroyLinks(tag);
               }
             });
-            const result = this.#createInstance(target, lifetime, tag);
-            if (parent) addLink(parent, lifetime);
+            const result = this.#createInstance(target, lifetime, tag, parent);
+            if (parent) addLink(parent.tag, lifetime);
             registerLifetime(result, lifetime);
             lifetime.registerAbortSignal(signal);
             this.#refcounteds.set(target, result);
@@ -139,8 +157,8 @@ export class Scope {
                 await destroyLinks(tag);
               }
             });
-            const result = this.#createInstance(target, lifetime, tag);
-            if (parent) addLink(parent, lifetime);
+            const result = this.#createInstance(target, lifetime, tag, parent);
+            if (parent) addLink(parent.tag, lifetime);
             lifetime.registerAbortSignal(signal);
             this.#injectables.add(result);
             return await result;

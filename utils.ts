@@ -1,14 +1,26 @@
-import type { Class, ClassOrToken } from "./types";
+import type { Class, ClassOrToken, ResolveMetadata } from "./types";
 
 const cache = new WeakMap<Class, ClassOrToken[]>();
-const overrides = new WeakMap<Class, [index: number, value: ClassOrToken][]>();
+const overrides = new WeakMap<Class, ClassOrToken[]>();
+const hints = new WeakMap<Class, any[]>();
 
 /** @internal */
 export function addOverride(target: Class, index: number, value: ClassOrToken) {
   if (!overrides.has(target)) {
     overrides.set(target, []);
   }
-  overrides.get(target)!.push([index, value]);
+  overrides.get(target)![index] = value;
+}
+
+export function addHint(target: Class, index: number, value: any) {
+  if (!hints.has(target)) {
+    hints.set(target, []);
+  }
+  hints.get(target)![index] = value;
+}
+
+export function getHint(target: Class, index: number) {
+  return hints.get(target)?.[index];
 }
 
 export function getDependencies(input: Class): ClassOrToken[] {
@@ -19,15 +31,14 @@ export function getDependencies(input: Class): ClassOrToken[] {
     (Reflect.getOwnMetadata("design:paramtypes", input) as any) ?? [];
   const override = overrides.get(input);
   if (override) {
-    for (const [index, value] of override) {
-      dependencies[index] = value;
+    for (const [index, value] of override.entries()) {
+      if (value != null) dependencies[index] = value;
     }
     overrides.delete(input);
   }
   cache.set(input, dependencies);
   return dependencies;
 }
-
 
 export function generateGraph(
   target: Class,

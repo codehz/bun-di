@@ -1,3 +1,3 @@
 export const AsyncInitializer = Symbol("AsyncInitializer");
 
-export const LinkSource = Symbol("LinkSource");
+export const ParentInfo = Symbol("ParentInfo");
