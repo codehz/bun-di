@@ -2,8 +2,16 @@ type Destructor = () => Promise<void> | void;
 
 export class Lifetime {
   #destructors: Destructor[];
+  #controller?: AbortController;
   constructor(initial: Destructor) {
     this.#destructors = [initial];
+  }
+
+  get signal() {
+    if (!this.#controller) {
+      this.#controller = new AbortController();
+    }
+    return this.#controller.signal;
   }
 
   addDestructor(destructor: Destructor) {
@@ -15,6 +23,7 @@ export class Lifetime {
     for (const destructor of this.#destructors) {
       await destructor();
     }
+    this.#controller?.abort();
   }
   /** @internal */
   registerAbortSignal(signal: AbortSignal) {
