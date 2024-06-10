@@ -1,5 +1,6 @@
 import { RootContainer } from "./root";
-import type { Class, Token } from "./types";
+import type { Class } from "./types";
+import type { Token } from "./token";
 import { addOverride } from "./utils";
 
 export function singleton(container = RootContainer): ClassDecorator {

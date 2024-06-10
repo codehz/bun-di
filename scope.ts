@@ -13,11 +13,11 @@ import {
 import { Lifetime, RefcountedLifetime } from "./lifetime";
 import { AsyncInitializer, LinkSource } from "./symbols";
 import {
-  Token,
   type Class,
   type ClassOrToken,
   type ScopeResolveOptions,
 } from "./types";
+import { Token } from "./token";
 import { getDependencies } from "./utils";
 
 async function disposePromise(obj: Promise<any>) {

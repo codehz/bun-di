@@ -2,6 +2,7 @@
 
 export * from "./container";
 export * from "./decorators";
+export { Token } from "./token";
 export { Lifetime } from "./lifetime";
 export * from "./root";
 export * from "./scope";

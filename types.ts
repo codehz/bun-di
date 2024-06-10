@@ -1,9 +1,6 @@
 import type { LinkTag } from "./internal";
 import type { LinkSource } from "./symbols";
-
-export class Token<T = any> {
-  constructor(public name: string, public defaultValue?: T) {}
-}
+import type { Token } from "./token";
 
 export type Class<T = any> = new (...args: any[]) => T;
 export type ClassOrToken<T = any> = Class<T> | Token<T>;
