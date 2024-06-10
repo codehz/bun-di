@@ -22,9 +22,6 @@ class MyScope extends Scope {
   }
 }
 
-const SubScope1 = new MyScope();
-const SubScope2 = new MyScope();
-
 @refcounted()
 class Refcounted {
   constructor(@inject(INPUT) public value: string) {}
@@ -71,14 +68,11 @@ class Test {
   }
 }
 
-const controller = new AbortController();
+await using SubScope1 = new MyScope();
+await using SubScope2 = new MyScope();
 
 RootScope.set(INPUT, "test");
 SubScope1.set(TEST, "sub1");
-const test1 = await SubScope1.resolve(Test, controller);
-// console.log(test1);
+await SubScope1.resolve(Test);
 SubScope2.set(TEST, "sub2");
-const test2 = await SubScope2.resolve(Test, controller);
-// console.log(test2);
-
-controller.abort("test");
+await SubScope2.resolve(Test);

@@ -3,11 +3,14 @@ import { ResolveError } from "./error";
 import {
   addLink,
   addLinkByKey,
+  addRefcountedCount,
   bindAbortSignal,
+  destoryLifetime,
   destroyLinks,
   LinkTag,
-  registerDestructor,
+  registerLifetime,
 } from "./internal";
+import { Lifetime, RefcountedLifetime } from "./lifetime";
 import { AsyncInitializer, LinkSource } from "./symbols";
 import {
   Token,
@@ -37,7 +40,7 @@ async function dispose(obj: any) {
 export class Scope {
   constructor(public container: Container, public parent?: Scope) {}
   #singletons = new Map<ClassOrToken, Promise<any>>();
-  #refcounteds = new Map<ClassOrToken, [value: Promise<any>, rc: number]>();
+  #refcounteds = new Map<ClassOrToken, Promise<any>>();
   #injectables = new Set<Promise<any>>();
 
   set<T>(key: ClassOrToken<T>, value: T) {
@@ -46,7 +49,7 @@ export class Scope {
 
   async #createInstance<T = any>(
     target: Class<T>,
-    signal: AbortSignal,
+    lifetime: Lifetime,
     tag: LinkTag
   ): Promise<T> {
     const params = getDependencies(target);
@@ -58,8 +61,8 @@ export class Scope {
               return this as any;
             case this.container.constructor:
               return this.container as any;
-            case AbortSignal:
-              return signal;
+            case Lifetime:
+              return lifetime;
             default:
               return this.resolve<any>(param as any, { [LinkSource]: tag });
           }
@@ -82,11 +85,11 @@ export class Scope {
       return this.#singletons.get(target)!;
     } else if (this.#refcounteds.has(target)) {
       const result = this.#refcounteds.get(target)!;
-      if (parent) addLinkByKey(parent, result[0]);
-      else if (signal) bindAbortSignal(target, signal);
+      if (parent) addLinkByKey(parent, result);
+      else if (signal) bindAbortSignal(result, signal);
       else throw new Error("No signal provided for refcounted instance");
-      result[1]++;
-      return result[0];
+      addRefcountedCount(result);
+      return result;
     }
     if (target instanceof Token) {
       if (target.defaultValue != null) {
@@ -105,39 +108,40 @@ export class Scope {
           signal ??= controller.signal;
           const tag = new LinkTag(target.name);
           if (type === "singleton") {
-            const result = this.#createInstance(target, signal, tag);
-            signal.addEventListener("abort", async () => {
-              this.#singletons.delete(target);
-              await disposePromise(result);
-              await destroyLinks(tag);
-            });
-            this.#singletons.set(target, result);
-            return await result;
-          } else if (type === "refcounted") {
-            const destroy = async () => {
-              const refcounted = this.#refcounteds.get(target);
-              if (refcounted && --refcounted[1] <= 0) {
-                this.#refcounteds.delete(target);
+            const lifetime = new Lifetime(async () => {
+              if (this.#singletons.delete(target)) {
                 await disposePromise(result);
                 await destroyLinks(tag);
               }
-            };
-            const result = this.#createInstance(target, signal, tag);
-            if (parent) addLink(parent, destroy);
-            registerDestructor(result, destroy);
-            signal.addEventListener("abort", destroy);
-            this.#refcounteds.set(target, [result, 1]);
+            });
+            const result = this.#createInstance(target, lifetime, tag);
+            registerLifetime(result, lifetime);
+            lifetime.registerAbortSignal(signal);
+            this.#singletons.set(target, result);
+            return await result;
+          } else if (type === "refcounted") {
+            const lifetime = new RefcountedLifetime(async () => {
+              if (this.#refcounteds.delete(target)) {
+                await disposePromise(result);
+                await destroyLinks(tag);
+              }
+            });
+            const result = this.#createInstance(target, lifetime, tag);
+            if (parent) addLink(parent, lifetime);
+            registerLifetime(result, lifetime);
+            lifetime.registerAbortSignal(signal);
+            this.#refcounteds.set(target, result);
             return await result;
           } else {
-            const destroy = async () => {
+            const lifetime = new RefcountedLifetime(async () => {
               if (this.#injectables.delete(result)) {
                 await disposePromise(result);
                 await destroyLinks(tag);
               }
-            };
-            const result = this.#createInstance(target, signal, tag);
-            if (parent) addLink(parent, destroy);
-            signal.addEventListener("abort", destroy);
+            });
+            const result = this.#createInstance(target, lifetime, tag);
+            if (parent) addLink(parent, lifetime);
+            lifetime.registerAbortSignal(signal);
             this.#injectables.add(result);
             return await result;
           }
@@ -157,17 +161,9 @@ export class Scope {
   }
 
   async [Symbol.asyncDispose]() {
-    for (const value of this.#singletons.values()) {
-      await dispose(await value);
+    for (const value of [...this.#singletons.values()].reverse()) {
+      await destoryLifetime(value);
     }
     this.#singletons.clear();
-    for (const [value] of this.#refcounteds.values()) {
-      await dispose(await value);
-    }
-    this.#refcounteds.clear();
-    for (const value of this.#injectables.values()) {
-      await dispose(await value);
-    }
-    this.#injectables.clear();
   }
 }
