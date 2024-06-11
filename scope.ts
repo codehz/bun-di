@@ -63,10 +63,6 @@ export class Scope {
       ...(await Promise.all(
         params.map((param, idx) => {
           switch (param) {
-            case this.constructor:
-              return this as any;
-            case this.container.constructor:
-              return this.container as any;
             case Lifetime:
               return lifetime;
             case ResolveMetadata: {
@@ -97,6 +93,12 @@ export class Scope {
     target: ClassOrToken<T>,
     options: ScopeResolveOptions = {}
   ): Promise<T> {
+    switch (target) {
+      case this.constructor:
+        return this as any;
+      case this.container.constructor:
+        return this.container as any;
+    }
     let { signal, [ParentInfo]: parent } = options;
     signal?.throwIfAborted();
     if (this.#singletons.has(target)) {
