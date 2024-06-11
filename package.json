@@ -2,6 +2,7 @@
   "name": "@codehz/di",
   "module": "index.ts",
   "type": "module",
+  "description": "A simple dependency injection library designed for Typescript user",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/codehz/bun-di.git"

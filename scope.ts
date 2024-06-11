@@ -22,10 +22,10 @@ import {
 } from "./types";
 import { getDependencies, getHint } from "./utils";
 
-async function disposePromise(obj: Promise<any>) {
-  if (Bun.peek.status(obj) === "fulfilled") {
-    const instance = Bun.peek(obj);
-    await dispose(instance);
+async function disposeResolvedPromise(obj: Promise<any>): Promise<void> {
+  const resolved = await Promise.race([obj, null]);
+  if (resolved) {
+    await dispose(resolved);
   } else {
     console.warn("Skiped disposing", obj);
   }
@@ -128,7 +128,7 @@ export class Scope {
           if (type === "singleton") {
             const lifetime = new Lifetime(async () => {
               if (this.#singletons.delete(target)) {
-                await disposePromise(result);
+                await disposeResolvedPromise(result);
                 await destroyLinks(tag);
               }
             });
@@ -140,7 +140,7 @@ export class Scope {
           } else if (type === "refcounted") {
             const lifetime = new RefcountedLifetime(async () => {
               if (this.#refcounteds.delete(target)) {
-                await disposePromise(result);
+                await disposeResolvedPromise(result);
                 await destroyLinks(tag);
               }
             });
@@ -153,7 +153,7 @@ export class Scope {
           } else {
             const lifetime = new RefcountedLifetime(async () => {
               if (this.#injectables.delete(result)) {
-                await disposePromise(result);
+                await disposeResolvedPromise(result);
                 await destroyLinks(tag);
               }
             });
