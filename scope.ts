@@ -69,6 +69,7 @@ export class Scope {
               const metadata = new ResolveMetadata();
               metadata.parent = parent?.class;
               metadata.hint = parent?.hint;
+              metadata.parentLifetime = parent?.lifetime;
               return metadata;
             }
             default:
@@ -77,6 +78,7 @@ export class Scope {
                   tag,
                   class: target,
                   hint: getHint(target, idx),
+                  lifetime,
                 },
               });
           }

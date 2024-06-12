@@ -1,4 +1,5 @@
 import type { LinkTag } from "./internal";
+import type { Lifetime } from "./lifetime";
 import type { ParentInfo } from "./symbols";
 import type { Token } from "./token";
 
@@ -14,6 +15,7 @@ export type ScopeResolveOptions = {
 export type ParentMetadata = {
   tag: LinkTag;
   class: Class;
+  lifetime: Lifetime;
   hint?: any;
 };
 
@@ -21,5 +23,6 @@ export type ContainerResolveResult = "singleton" | "refcounted" | "injectable";
 
 export class ResolveMetadata {
   parent?: Class;
+  parentLifetime?: Lifetime;
   hint?: any;
 }
