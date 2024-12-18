@@ -44,12 +44,13 @@ export class Scope {
     public container: Container,
     public parent?: Scope
   ) {}
+  #defines = new Map<ClassOrToken, Promise<any>>();
   #singletons = new Map<ClassOrToken, Promise<any>>();
   #refcounteds = new Map<ClassOrToken, Promise<any>>();
   #injectables = new Set<Promise<any>>();
 
   set<T>(key: ClassOrToken<T>, value: T) {
-    this.#singletons.set(key, Promise.resolve(value));
+    this.#defines.set(key, Promise.resolve(value));
   }
 
   async #createInstance<T = any>(
@@ -103,7 +104,9 @@ export class Scope {
     }
     let { signal, [ParentInfo]: parent } = options;
     signal?.throwIfAborted();
-    if (this.#singletons.has(target)) {
+    if (this.#defines.has(target)) {
+      return this.#defines.get(target)!;
+    } else if (this.#singletons.has(target)) {
       return this.#singletons.get(target)!;
     } else if (this.#refcounteds.has(target)) {
       const result = this.#refcounteds.get(target)!;
